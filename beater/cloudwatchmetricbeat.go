@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+
 	"github.com/elastic/beats/libbeat/beat"
 	"github.com/elastic/beats/libbeat/common"
 	"github.com/elastic/beats/libbeat/logp"
@@ -42,11 +43,20 @@ func New(b *beat.Beat, cfg *common.Config) (beat.Beater, error) {
 		"settings: " +
 			fmt.Sprintf("config=%+v", config),
 	)
+	awsConfig := &aws.Config{}
+	if config.AWSEndpoint != "" {
+		awsConfig = &aws.Config{
+			Retryer: client.DefaultRetryer{NumMaxRetries: 10},
+			Endpoint: aws.String(config.AWSEndpoint),
+		}
+	} else {
+		awsConfig = &aws.Config{
+			Retryer: client.DefaultRetryer{NumMaxRetries: 10},
+			Region:  aws.String(config.AWSRegion),
+		}
+	}
 
-	sess := session.Must(session.NewSession(&aws.Config{
-		Retryer: client.DefaultRetryer{NumMaxRetries: 10},
-		Region:  aws.String(config.AWSRegion),
-	}))
+	sess := session.Must(session.NewSession(awsConfig))
 	// Create cloudwatch session
 	svc := cloudwatch.New(sess)
 

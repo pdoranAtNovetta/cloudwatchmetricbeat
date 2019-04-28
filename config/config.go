@@ -38,6 +38,7 @@ type Config struct {
 	// 300) results in no metrics being returned from CloudWatch.
 	Period      time.Duration `config:"period"`
 	AWSRegion   string        `config:"aws_region"`
+	AWSEndpoint	string		  `config:"aws_endpoint"`
 	Prospectors []Prospector  `config:"prospectors"`
 }
 
