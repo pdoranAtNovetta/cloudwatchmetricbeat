@@ -3,6 +3,7 @@ package beater
 import (
 	"errors"
 	"fmt"
+
 	"time"
 
 
@@ -13,6 +14,7 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/client"
+	"github.com/aws/aws-sdk-go/aws/endpoints"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/cloudwatch"
 	"github.com/aws/aws-sdk-go/service/cloudwatch/cloudwatchiface"
@@ -43,17 +45,22 @@ func New(b *beat.Beat, cfg *common.Config) (beat.Beater, error) {
 		"settings: " +
 			fmt.Sprintf("config=%+v", config),
 	)
-	awsConfig := &aws.Config{}
+	awsConfig := &aws.Config{
+		Retryer: client.DefaultRetryer{NumMaxRetries: 10},
+		Region:  aws.String(config.AWSRegion),
+	}
 	if config.AWSEndpoint != "" {
-		awsConfig = &aws.Config{
-			Retryer: client.DefaultRetryer{NumMaxRetries: 10},
-			Endpoint: aws.String(config.AWSEndpoint),
+		cloudwatchMetricsResolver := func(service, region string, optFns ...func(*endpoints.Options)) (endpoints.ResolvedEndpoint, error) {
+			if service == endpoints.MonitoringServiceID {
+				return endpoints.ResolvedEndpoint{
+					URL:           config.AWSEndpoint,
+					SigningRegion: config.AWSRegion,
+				}, nil
+			}
+
+			return endpoints.DefaultResolver().EndpointFor(service, region, optFns...)
 		}
-	} else {
-		awsConfig = &aws.Config{
-			Retryer: client.DefaultRetryer{NumMaxRetries: 10},
-			Region:  aws.String(config.AWSRegion),
-		}
+		awsConfig.EndpointResolver = endpoints.ResolverFunc(cloudwatchMetricsResolver)
 	}
 
 	sess := session.Must(session.NewSession(awsConfig))
