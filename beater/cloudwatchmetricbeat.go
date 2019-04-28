@@ -73,6 +73,13 @@ func (cwb *Cloudwatchmetricbeat) Run(b *beat.Beat) error {
 	logp.Info("cloudwatchmetricbeat is running! Hit CTRL-C to stop it.")
 
 	cwb.client = b.Publisher.Connect()
+
+	err := cwb.loadMetricConfig()
+	if err != nil {
+		<-cwb.done
+		return nil
+	}
+
 	if cwb.config.Period > 0 {
 		go cwb.monitor()
 		<-cwb.done
@@ -115,6 +122,73 @@ func (b *Cloudwatchmetricbeat) refreshMetrics() {
 	}
 }
 
+func (b *Cloudwatchmetricbeat) loadMetricConfig()  (error)  {
+	var prospectors []config.Prospector
+
+	//collect metrics under a prospector
+	for _, configProspector := range b.config.Prospectors {
+		logp.Info("cloudwatchmetricbeat is looking up metrics for prospector %s", configProspector.Id)
+		newProspector  := config.Prospector {
+			Id: configProspector.Id,
+			Metrics: []config.Metric{},
+		}
+		//collect specific metrics from request
+		for _, oldMetric := range configProspector.Metrics {
+			if oldMetric.AWSMetricName == "*" {
+				logp.Info("cloudwatchmetricbeat is looking up metrics for namespace %s", oldMetric.AWSNamespace)
+				input := &cloudwatch.ListMetricsInput{
+					Namespace: aws.String(oldMetric.AWSNamespace),
+				}
+				err := b.awsClient.ListMetricsPages(input,
+					func(metricsOutput *cloudwatch.ListMetricsOutput, lastPage bool) bool {
+						extractMetrics(metricsOutput, oldMetric, &newProspector)
+						return !lastPage
+					})
+
+
+
+				if err != nil {
+					logp.Err("aws client error: ", err)
+					return err
+				}
+			}
+
+		}
+
+		prospectors = append(prospectors, newProspector)
+	}
+	b.config.Prospectors = prospectors
+
+	return nil
+}
+
+func extractMetrics(metricsOutput *cloudwatch.ListMetricsOutput, oldMetric config.Metric, prospector *config.Prospector)  {
+
+	//generate metric based on existing metrics
+	for _, metricOutput := range metricsOutput.Metrics {
+		dimensions := []string{}
+		dimensionSelect := map[string][]string{}
+
+		for _, dimension := range metricOutput.Dimensions {
+			dimensions = append(dimensions, *dimension.Name)
+			dimensionSelect[*dimension.Name] = []string{*dimension.Value}
+		}
+
+		newMetric := config.Metric{
+			AWSStatistics:            oldMetric.AWSStatistics,
+			AWSDimensions:            dimensions,
+			AWSDimensionSelect:       dimensionSelect,
+			AWSDimensionsSelectParam: dimensionSelect,
+			AWSNamespace:             *metricOutput.Namespace,
+			AWSMetricName:            *metricOutput.MetricName,
+			RangeSeconds:             oldMetric.RangeSeconds,
+			PeriodSeconds:            oldMetric.PeriodSeconds,
+			DelaySeconds:             oldMetric.DelaySeconds,
+		}
+		prospector.Metrics = append(prospector.Metrics, newMetric)
+	}
+
+}
 // manager
 
 const DefaultPeriodSeconds = 60
