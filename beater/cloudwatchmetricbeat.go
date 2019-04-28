@@ -224,6 +224,14 @@ func (p *Prospector) fetchMetric(metric *config.Metric) (*common.MapStr, error) 
 		"cloudwatchset.namespace":        metric.AWSNamespace,
 	}
 
+	for dim := range metric.AWSDimensionSelect {
+		for val := range metric.AWSDimensionSelect[dim] {
+			dimValue := metric.AWSDimensionSelect[dim][val]
+
+			event[fmt.Sprintf("cloudwatchset.dimension.%s", toSnake(dim))] = dimValue
+		}
+	}
+
 	if dp.Sum != nil {
 		event[fmt.Sprintf("%s.sum", toSnake(metric.AWSMetricName))] = float64(*dp.Sum)
 	}
